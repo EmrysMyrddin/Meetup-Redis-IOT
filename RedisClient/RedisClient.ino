@@ -38,6 +38,19 @@
 // Last print timestamp
 unsigned long lastSensorRead = 0;
 
+WiFiClient redisConnection;
+IPAddress redisIP;
+
+void readRedisResponse() {
+  //Wait for the response
+  while(redisConnection.available() == 0);
+
+  //Consume the response
+  while(redisConnection.available()!=0) {
+    Serial.print((char)redisConnection.read());
+  }
+}
+
 /********/
 /* Main */
 /********/
@@ -82,6 +95,34 @@ void setup() {
 
 void loop() {
   STATS_LOOP
+
+  if(!redisConnection.connected()) {
+    DEBUG_PRINT("Opening connection to ");
+    DEBUG_PRINT( redis_host );
+    DEBUG_PRINT("(") ;
+    WiFi.hostByName( redis_host , redisIP );
+    DEBUG_PRINT( redisIP ) ;
+    DEBUG_PRINT("):");
+    int redisPort = atoi(redis_port);
+    DEBUG_PRINT( redis_port );
+    DEBUG_PRINT("...");
+    if (!redisConnection.connect(redisIP, redisPort)) {
+      DEBUG_PRINTLN ("Failed , press reset");
+      while (1) yield();
+    } else {
+      DEBUG_PRINTLN ("Succeed");
+    }
+
+    // Send hardcoded connection
+    redisConnection.write("*2\r\n$4\r\nAUTH\r\n$3\r\niot\r\n");
+
+    readRedisResponse();
+    
+  }
+
+  // Send hardcoded PING in RESP
+  redisConnection.write("*1\r\n$4\r\nPING\r\n");
+  readRedisResponse();
 
   if ((millis() - lastSensorRead) > 5000) {
     PROF_START(SensorRead);
