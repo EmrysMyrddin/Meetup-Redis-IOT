@@ -29,6 +29,7 @@
 #define STATS_HOOK digitalWrite(LED_BUILTIN,((digitalRead(LED_BUILTIN)==HIGH)?LOW:HIGH))
 #define STATS_PERIOD 1000
 #include "tools.h"
+#include <RedisCommand.h>
 
 // Read Wifi SSID/Password, and Redis Host/Port/Pass from EEPROM
 // in wifi_ssid, wifi_pass, redis_host, redis_port and redis_pass (all char*)
@@ -40,6 +41,8 @@ unsigned long lastSensorRead = 0;
 
 WiFiClient redisConnection;
 IPAddress redisIP;
+RedisCommand_t redisCommand;
+char* szRESP;
 
 void readRedisResponse() {
   //Wait for the response
@@ -50,6 +53,40 @@ void readRedisResponse() {
     Serial.print((char)redisConnection.read());
   }
 }
+
+void prepareRedisCommand(const char* command) {
+  rediscommand_init(redisCommand);
+  rediscommand_add(redisCommand , command);
+}
+
+void sendRedisCommand() {
+  szRESP = rediscommand_tochar(redisCommand);
+  redisConnection.print(szRESP);
+  free (szRESP);
+  readRedisResponse();
+}
+
+void sendRedisCommand(const char* command, const char* arg) {
+  prepareRedisCommand(command);
+  rediscommand_add(redisCommand , arg);
+  sendRedisCommand();
+}
+
+void sendRedisCommand(const char* command, const char* arg1, const int arg2) {
+  prepareRedisCommand(command);
+  rediscommand_add(redisCommand , arg1);
+  rediscommand_add(redisCommand , arg2);
+  sendRedisCommand();
+}
+
+void sendRedisCommand(const char* command, const char* arg1, const char* arg2) {
+  prepareRedisCommand(command);
+  rediscommand_add(redisCommand , arg1);
+  rediscommand_add(redisCommand , arg2);
+  sendRedisCommand();
+}
+
+
 
 /********/
 /* Main */
@@ -113,16 +150,12 @@ void loop() {
       DEBUG_PRINTLN ("Succeed");
     }
 
-    // Send hardcoded connection
-    redisConnection.write("*2\r\n$4\r\nAUTH\r\n$3\r\niot\r\n");
-
-    readRedisResponse();
-    
+    // Send AUTH in RESP
+    sendRedisCommand("AUTH", redis_pass);
   }
 
-  // Send hardcoded PING in RESP
-  redisConnection.write("*1\r\n$4\r\nPING\r\n");
-  readRedisResponse();
+  sendRedisCommand("LPUSH", (String("v:") + WiFi.macAddress()).c_str(), analogRead(0));
+  sendRedisCommand("PUBLISH", "refreshvalues", WiFi.macAddress().c_str());
 
   if ((millis() - lastSensorRead) > 5000) {
     PROF_START(SensorRead);
